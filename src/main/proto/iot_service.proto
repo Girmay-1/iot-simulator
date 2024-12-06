@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package iot;
+
+option java_package = "com.iot.simulator.grpc";
+option java_multiple_files = true;
+
+// Device registration and management
+message Device {
+  string device_id = 1;
+  string name = 2;
+  string type = 3;
+  DeviceStatus status = 4;
+}
+
+enum DeviceStatus {
+  UNKNOWN = 0;
+  ONLINE = 1;
+  OFFLINE = 2;
+  MAINTENANCE = 3;
+  ERROR = 4;
+}
+
+message RegistrationRequest {
+  string name = 1;
+  string type = 2;
+}
+
+message RegistrationResponse {
+  string device_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// Sensor data
+message SensorData {
+  string device_id = 1;
+  string sensor_type = 2;
+  double value = 3;
+  int64 timestamp = 4;
+  map<string, string> metadata = 5;
+}
+
+message SensorDataRequest {
+  string device_id = 1;
+}
+
+// Command and control
+message Command {
+  string device_id = 1;
+  string command_type = 2;
+  map<string, string> parameters = 3;
+}
+
+message CommandResponse {
+  string device_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// Status update
+message StatusUpdate {
+  string device_id = 1;
+  DeviceStatus status = 2;
+  string message = 3;
+  int64 timestamp = 4;
+}
+
+// Service definition
+service IoTService {
+  // Device registration - Unary RPC
+  rpc RegisterDevice(RegistrationRequest) returns (RegistrationResponse) {}
+  
+  // Sensor data streaming - Client streaming RPC
+  rpc StreamSensorData(stream SensorData) returns (CommandResponse) {}
+  
+  // Device monitoring - Server streaming RPC
+  rpc MonitorDevice(SensorDataRequest) returns (stream StatusUpdate) {}
+  
+  // Command and control - Bidirectional streaming RPC
+  rpc ControlDevice(stream Command) returns (stream CommandResponse) {}
+}
