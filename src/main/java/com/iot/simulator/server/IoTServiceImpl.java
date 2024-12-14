@@ -1,9 +1,11 @@
 package com.iot.simulator.server;
 
 import com.iot.simulator.grpc.*;
+import com.iot.simulator.device.DeviceManager;
 import io.grpc.stub.StreamObserver;
 import lombok.extern.slf4j.Slf4j;
 
+import javax.annotation.PreDestroy;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,17 +13,15 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
     
-    // Store registered devices and their status
     private final Map<String, Device> devices = new ConcurrentHashMap<>();
+    private final DeviceManager deviceManager = new DeviceManager();
 
     @Override
     public void registerDevice(RegistrationRequest request, StreamObserver<RegistrationResponse> responseObserver) {
         log.info("Received registration request for device: {}", request.getName());
         
-        // Generate a unique device ID
         String deviceId = UUID.randomUUID().toString();
         
-        // Create and store the device
         Device device = Device.newBuilder()
                 .setDeviceId(deviceId)
                 .setName(request.getName())
@@ -30,8 +30,8 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
                 .build();
         
         devices.put(deviceId, device);
+        deviceManager.registerDevice(device);
         
-        // Send response
         RegistrationResponse response = RegistrationResponse.newBuilder()
                 .setDeviceId(deviceId)
                 .setSuccess(true)
@@ -55,7 +55,7 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
                     sensorData.getValue());
                 
                 // Process the sensor data
-                // For now, we'll just acknowledge receipt
+                // TODO: Implement data processing logic
             }
 
             @Override
@@ -82,23 +82,19 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
         String deviceId = request.getDeviceId();
         log.info("Starting monitoring for device: {}", deviceId);
         
-        // Here we would typically start a monitoring thread or process
-        // For demonstration, we'll just send a single status update
-        
-        if (devices.containsKey(deviceId)) {
-            StatusUpdate update = StatusUpdate.newBuilder()
-                    .setDeviceId(deviceId)
-                    .setStatus(devices.get(deviceId).getStatus())
-                    .setMessage("Device is being monitored")
-                    .setTimestamp(System.currentTimeMillis())
-                    .build();
-            
-            responseObserver.onNext(update);
+        if (!devices.containsKey(deviceId)) {
+            responseObserver.onError(
+                new IllegalArgumentException("Device not found: " + deviceId)
+            );
+            return;
         }
-        
-        // In a real implementation, you would continue sending updates
-        // For now, we'll just complete the stream
-        responseObserver.onCompleted();
+
+        try {
+            deviceManager.startMonitoring(deviceId, responseObserver);
+        } catch (Exception e) {
+            log.error("Error starting device monitoring", e);
+            responseObserver.onError(e);
+        }
     }
 
     @Override
@@ -110,7 +106,7 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
                     command.getDeviceId(), 
                     command.getCommandType());
                 
-                // Process the command and send response
+                // TODO: Implement command execution logic
                 CommandResponse response = CommandResponse.newBuilder()
                         .setDeviceId(command.getDeviceId())
                         .setSuccess(true)
@@ -132,5 +128,10 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
                 log.info("Command stream completed");
             }
         };
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        deviceManager.shutdown();
     }
 }
