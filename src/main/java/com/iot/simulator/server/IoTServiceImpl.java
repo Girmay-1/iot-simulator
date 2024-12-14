@@ -2,6 +2,8 @@ package com.iot.simulator.server;
 
 import com.iot.simulator.grpc.*;
 import com.iot.simulator.device.DeviceManager;
+import com.iot.simulator.sensor.SensorProcessor;
+import com.iot.simulator.command.CommandProcessor;
 import io.grpc.stub.StreamObserver;
 import lombok.extern.slf4j.Slf4j;
 
@@ -15,6 +17,8 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
     
     private final Map<String, Device> devices = new ConcurrentHashMap<>();
     private final DeviceManager deviceManager = new DeviceManager();
+    private final SensorProcessor sensorProcessor = new SensorProcessor();
+    private final CommandProcessor commandProcessor = new CommandProcessor();
 
     @Override
     public void registerDevice(RegistrationRequest request, StreamObserver<RegistrationResponse> responseObserver) {
@@ -49,13 +53,16 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
         return new StreamObserver<>() {
             @Override
             public void onNext(SensorData sensorData) {
-                log.info("Received sensor data from device {}: {} = {}", 
-                    sensorData.getDeviceId(), 
-                    sensorData.getSensorType(), 
-                    sensorData.getValue());
+                boolean processed = sensorProcessor.processSensorData(sensorData);
                 
-                // Process the sensor data
-                // TODO: Implement data processing logic
+                if (!processed) {
+                    CommandResponse errorResponse = CommandResponse.newBuilder()
+                        .setDeviceId(sensorData.getDeviceId())
+                        .setSuccess(false)
+                        .setMessage("Failed to process sensor data")
+                        .build();
+                    responseObserver.onNext(errorResponse);
+                }
             }
 
             @Override
@@ -68,7 +75,7 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
             public void onCompleted() {
                 CommandResponse response = CommandResponse.newBuilder()
                         .setSuccess(true)
-                        .setMessage("Sensor data stream processed successfully")
+                        .setMessage("Sensor data stream completed")
                         .build();
                 responseObserver.onNext(response);
                 responseObserver.onCompleted();
@@ -105,14 +112,20 @@ public class IoTServiceImpl extends IoTServiceGrpc.IoTServiceImplBase {
                 log.info("Received command for device {}: {}", 
                     command.getDeviceId(), 
                     command.getCommandType());
-                
-                // TODO: Implement command execution logic
-                CommandResponse response = CommandResponse.newBuilder()
+
+                // Check if device exists
+                if (!devices.containsKey(command.getDeviceId())) {
+                    CommandResponse errorResponse = CommandResponse.newBuilder()
                         .setDeviceId(command.getDeviceId())
-                        .setSuccess(true)
-                        .setMessage("Command processed: " + command.getCommandType())
+                        .setSuccess(false)
+                        .setMessage("Device not found")
                         .build();
-                
+                    responseObserver.onNext(errorResponse);
+                    return;
+                }
+
+                // Process the command
+                CommandResponse response = commandProcessor.processCommand(command);
                 responseObserver.onNext(response);
             }
 
